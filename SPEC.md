@@ -6,36 +6,57 @@
 
 A web app that lets retail investors:
 1. Define one or more **portfolios**, each with a target asset allocation.
-2. Track current holdings (manually entered or imported via CSV) against those targets.
-3. Generate a **rebalance trade list** to close the gap between current and target (threshold-based or calendar-based).
-4. **Backtest** a strategy (target allocation + rebalance rule + contribution schedule) over historical data, with institutional-grade metrics.
+2. Record buys/sells/dividends/deposits as **transactions**; current holdings are derived from the transaction ledger.
+3. Generate a **rebalance trade list** to close the gap between current and target (threshold or calendar trigger), and optionally mark trades as executed (creating transactions).
+4. **Backtest** a strategy (target allocation + rebalance rule + contribution schedule) over historical data, with institutional-grade metrics including FF5 factor exposures.
+5. Track **portfolio performance over time** (time-weighted return) using actual transaction history.
+6. Clone from a **library of canonical starter portfolios** (3-fund, 4-fund Boglehead, Permanent Portfolio, All Weather, Golden Butterfly, etc.).
 
-Positioning: Boglehead-friendly. Passive/allocation-first. Not a day-trading tool. Not a robo-advisor (we never touch your money).
+Positioning: Boglehead-friendly. Passive/allocation-first. Not a day-trading tool. Not a robo-advisor (we never touch money).
 
-**Not in v1**: broker API integration, tax-lot tracking, options/crypto/international, mobile native, social features.
+## Phased rollout
+
+| Phase | Duration | Users | Public-facing? |
+|---|---|---|---|
+| **Phase 1 — Internal alpha** | 10-12 weeks | You + 2-3 trusted friends as co-testers | Hosted but allowlisted. Landing page + ToS + shareable URLs all built (architectural cleanliness), but signups closed. **No freemium gating** — everyone gets full features. |
+| **Phase 2 — Public beta** | 4-6 weeks | Invite-code holders | Open invite-code redemption, freemium gates ON, Sentry + Resend wired up, sample backtests on landing, Reddit / friends share invites. |
+
+**Phase 2 quality bar (the trigger for going public):**
+- I've used it personally for ≥4 weeks
+- I've rebalanced my real portfolio with it ≥2 times
+- I've run ≥10 backtests on real strategies
+- No high-priority bugs open
+- 2-3 co-testers have used it for ≥2 weeks without major complaints
 
 ## Locked-in decisions
 
 | Dimension | Decision |
 |---|---|
-| Audience | Public signup, **invite-only** for v1, "not financial advice" disclaimers throughout |
+| Audience | Public signup eventually (Phase 2), invite-only |
 | Asset universe | US-listed ETFs + US individual stocks |
 | Strategy primary | Portfolio allocation + rebalancing |
-| Holdings input | Manual table editor + generic CSV import |
-| Data model | User → many Portfolios → many Holdings + one TargetAllocation + one RebalanceRule |
-| Backtest depth | Equity curve, CAGR, max DD, Sharpe, Sortino, rolling metrics, vs benchmark, **named regimes**, **factor exposures (Fama-French 5)** |
-| Planning feature | Rebalance trade list (user picks threshold or calendar trigger) |
-| Pricing | Freemium (free tier + paid tier, schema-ready, but billing implementation deferred to end of v1) |
-| Domain | Defer; ship under `*.vercel.app` |
-| Distribution | Invite codes shared with friends + r/Bogleheads |
-| Timeline | 2-3 months, evenings/weekends, polished |
+| Holdings input | Manual entry (treated as opening-balance transactions) + generic CSV import |
+| Data model | Transactions ledger is source of truth; holdings computed from it |
+| Backtest depth | Equity curve, CAGR, max DD, Sharpe, Sortino, rolling metrics, vs benchmark, **named regimes**, **Fama-French 5 factor exposures** |
+| Planning feature | Rebalance trade list with both threshold + calendar trigger options |
+| Trade-list execution | "Mark as executed" creates transactions; full ledger from day one |
+| Performance display | Time-weighted return chart since first transaction + per-holding unrealized P&L |
+| Starter content | Library of 10-15 canonical portfolios, clone-to-create |
+| Onboarding | First-run shows the starter library; "Build from scratch" is a secondary option |
+| Pricing | Freemium (free=1 portfolio basic, paid=unlimited + pro features). Schema-ready in Phase 1, **enforced in Phase 2** |
+| Domain | Defer; ship under `*.vercel.app` for Phase 1, custom domain for Phase 2 |
+| Distribution | Phase 1: word of mouth to 2-3 friends. Phase 2: Reddit (r/Bogleheads, r/investing) + friends share invites |
+| Timeline | Phase 1: 10-12 weeks. Phase 2: 4-6 weeks. Total ~4-5 months |
 | Budget | Under $20/mo |
+| Backtest UX | Synchronous (spinner) + saved + named + comparison + **public shareable URLs** |
+| Auth (Phase 1) | Supabase Auth + email allowlist (you + 2-3 friends) |
+| Hosting (Phase 1) | Full deploy on Vercel + Supabase + Fly.io from day 1 |
 
 ## Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  Next.js 15 (App Router) on Vercel Hobby                       │
+│  Next.js 16 (App Router) on Vercel Hobby                       │
 │  - TS, Tailwind, shadcn/ui, Recharts                           │
 │  - Server Components for reads, Server Actions for writes      │
 │  - Supabase JS client (auth + RLS-protected queries)           │
@@ -48,44 +69,29 @@ Positioning: Boglehead-friendly. Passive/allocation-first. Not a day-trading too
 │  - Postgres (RLS per user)     │  │  - FastAPI                   │
 │  - Auth (email magic link)     │  │  - pandas, numpy, statsmodels│
 │  - Storage (CSV uploads)       │  │  - Endpoints: /backtest,     │
-│  - Cron (price refresh)        │  │    /rebalance, /factors      │
-└────────────────────────────────┘  │  - Scale-to-zero machine     │
+│  - Cron (price refresh)        │  │    /rebalance, /factors,     │
+└────────────────────────────────┘  │    /twr                      │
+                                    │  - Scale-to-zero machine     │
                                     └──────────────────────────────┘
                                               │
                                               │ HTTPS
                                               ▼
-                                    ┌──────────────────────────────┐
-                                    │  Tiingo (free tier)          │
-                                    │  - EOD OHLCV                 │
-                                    │  - 500 req/hr, ~30 yr history│
-                                    └──────────────────────────────┘
-                                              │
-                                              ▼
-                                    ┌──────────────────────────────┐
-                                    │  Kenneth French Data Library │
-                                    │  - Fama-French 5 factor      │
-                                    │    daily/monthly returns     │
-                                    │  - Free, refresh monthly     │
-                                    └──────────────────────────────┘
+                                    Tiingo (free) + Kenneth French
 ```
-
-**Why this shape:**
-- Next.js handles UI + simple CRUD via Server Actions. No separate REST API to maintain.
-- Python worker handles the math-heavy stuff (backtest engine, factor regression, rebalance solver). Pandas/numpy/statsmodels make this trivial; doing it in JS would be 10x the code.
-- Supabase is the cheapest credible auth + Postgres + storage in one. RLS gives per-user isolation for free.
-- Tiingo is the only free EOD data source with a real ToS that permits hosted multi-user apps (yfinance scrapes Yahoo and violates ToS; Alpha Vantage rate limits are too tight).
 
 ## Data model (Postgres)
 
+The schema is **transactions-first**: the ledger is the source of truth, and the "current holdings" table is a denormalized cache that's recomputed when transactions change. This unlocks: TWR calc, per-lot cost basis, accurate P&L, future tax-aware features.
+
 ```sql
--- Managed by Supabase Auth
--- auth.users (id, email, ...)
+-- Managed by Supabase Auth: auth.users(id, email, ...)
 
 create table profiles (
-  id          uuid primary key references auth.users(id) on delete cascade,
+  id           uuid primary key references auth.users(id) on delete cascade,
   display_name text,
-  tier        text not null default 'free' check (tier in ('free','paid')),
-  created_at  timestamptz not null default now()
+  tier         text not null default 'free' check (tier in ('free','paid')),
+  is_admin     boolean not null default false,
+  created_at   timestamptz not null default now()
 );
 
 create table invite_codes (
@@ -102,248 +108,276 @@ create table portfolios (
   owner_id    uuid not null references profiles(id) on delete cascade,
   name        text not null,
   description text,
+  cloned_from text,   -- 'three_fund' | 'permanent' | null (custom)
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 
-create table holdings (
+-- Target allocation (versioned: changes are appended, not overwritten)
+create table target_allocations (
   id          uuid primary key default gen_random_uuid(),
   portfolio_id uuid not null references portfolios(id) on delete cascade,
-  ticker      text not null,
-  shares      numeric(20,8) not null check (shares >= 0),
-  cost_basis  numeric(20,4),   -- total $, optional
-  acquired_at date,
-  notes       text,
+  weights     jsonb not null,         -- {"VTI": 0.60, "BND": 0.30, "GLD": 0.10}
+  effective_at timestamptz not null default now(),
   created_at  timestamptz not null default now()
 );
-create index on holdings (portfolio_id);
-
-create table target_allocations (
-  portfolio_id uuid primary key references portfolios(id) on delete cascade,
-  -- {"VTI": 0.60, "BND": 0.30, "GLD": 0.10}; weights must sum to 1.0
-  weights     jsonb not null,
-  updated_at  timestamptz not null default now()
-);
+create index target_allocations_portfolio_idx on target_allocations (portfolio_id, effective_at desc);
 
 create table rebalance_rules (
-  portfolio_id uuid primary key references portfolios(id) on delete cascade,
-  -- 'threshold' | 'calendar' | 'both'
-  trigger_type text not null check (trigger_type in ('threshold','calendar','both')),
-  drift_pct    numeric(5,2),  -- e.g. 5.00 means rebalance if any position drifts > 5%
-  calendar     text,          -- 'monthly' | 'quarterly' | 'semiannual' | 'annual'
-  use_cash_flow boolean not null default true,  -- prefer contributions over selling
-  updated_at  timestamptz not null default now()
+  portfolio_id   uuid primary key references portfolios(id) on delete cascade,
+  trigger_type   text not null check (trigger_type in ('threshold','calendar','both')),
+  drift_pct      numeric(5,2),
+  calendar       text check (calendar in ('monthly','quarterly','semiannual','annual')),
+  use_cash_flow  boolean not null default true,
+  updated_at     timestamptz not null default now()
 );
 
+-- SOURCE OF TRUTH: every event that changes the portfolio
+create table transactions (
+  id            uuid primary key default gen_random_uuid(),
+  portfolio_id  uuid not null references portfolios(id) on delete cascade,
+  kind          text not null check (kind in (
+                  'opening_balance',   -- initial "I already own X" entry
+                  'buy', 'sell',
+                  'dividend',          -- cash dividend
+                  'reinvest_dividend', -- DRIP
+                  'deposit', 'withdraw', -- cash in/out
+                  'split'              -- N-for-1 split, ticker constant
+                )),
+  ticker        text,                  -- null for deposit/withdraw
+  shares        numeric(20,8),         -- positive for buy/dividend-reinvest/opening, negative for sell
+  price         numeric(20,4),         -- per-share at trade date; null for splits/deposits
+  amount        numeric(20,4),         -- $ for deposit/withdraw/cash dividend
+  fees          numeric(20,4) not null default 0,
+  trade_date    date not null,
+  notes         text,
+  source        text check (source in ('manual','csv','rebalance_action')),
+  created_at    timestamptz not null default now()
+);
+create index transactions_portfolio_date_idx on transactions (portfolio_id, trade_date);
+
+-- DERIVED CACHE: aggregated current state per (portfolio, ticker)
+-- Recomputed from transactions whenever transactions change.
+create table holdings_cache (
+  portfolio_id     uuid not null references portfolios(id) on delete cascade,
+  ticker           text not null,
+  shares           numeric(20,8) not null,
+  cost_basis_total numeric(20,4) not null,
+  primary key (portfolio_id, ticker)
+);
+
+-- Cash balance per portfolio (also derived from transactions)
+create table cash_balances (
+  portfolio_id uuid primary key references portfolios(id) on delete cascade,
+  balance      numeric(20,4) not null default 0
+);
+
+-- Reference data: shared, not user-owned
 create table tickers (
-  symbol      text primary key,
-  name        text,
-  asset_class text,  -- 'equity' | 'etf' | 'bond_etf' | 'commodity_etf' | ...
-  exchange    text,
-  active      boolean not null default true,
+  symbol         text primary key,
+  name           text,
+  asset_class    text,
+  exchange       text,
+  active         boolean not null default true,
   last_synced_at timestamptz
 );
 
 create table prices_daily (
-  ticker      text not null references tickers(symbol),
-  trade_date  date not null,
-  open        numeric(20,4),
-  high        numeric(20,4),
-  low         numeric(20,4),
-  close       numeric(20,4) not null,
-  adj_close   numeric(20,4) not null,
-  volume      bigint,
+  ticker     text not null references tickers(symbol),
+  trade_date date not null,
+  open       numeric(20,4),
+  high       numeric(20,4),
+  low        numeric(20,4),
+  close      numeric(20,4) not null,
+  adj_close  numeric(20,4) not null,
+  volume     bigint,
   primary key (ticker, trade_date)
 );
-create index on prices_daily (trade_date);
+
+-- Starter portfolio templates (admin-curated, shared)
+create table starter_portfolios (
+  slug         text primary key,    -- 'three_fund', 'all_weather', etc.
+  name         text not null,
+  description  text not null,
+  attribution  text,                 -- 'Popularized by John Bogle', etc.
+  weights      jsonb not null,
+  default_rebalance jsonb not null,  -- rebalance_rule shape
+  created_at   timestamptz not null default now()
+);
 
 create table backtests (
-  id          uuid primary key default gen_random_uuid(),
-  portfolio_id uuid not null references portfolios(id) on delete cascade,
-  config      jsonb not null,  -- snapshot of allocation + rule + dates + contributions
-  result      jsonb,            -- equity curve, metrics, regime slices, factor betas
-  status      text not null default 'pending' check (status in ('pending','running','done','failed')),
-  error       text,
-  created_at  timestamptz not null default now(),
-  completed_at timestamptz
+  id              uuid primary key default gen_random_uuid(),
+  portfolio_id    uuid references portfolios(id) on delete cascade,
+  owner_id        uuid not null references profiles(id) on delete cascade,
+  name            text,                          -- user-named, optional
+  config          jsonb not null,
+  result          jsonb,
+  status          text not null default 'pending' check (status in ('pending','running','done','failed')),
+  error           text,
+  share_token     text unique,                   -- if set, accessible via /b/<token> publicly
+  created_at      timestamptz not null default now(),
+  completed_at    timestamptz
 );
+create index backtests_owner_idx on backtests (owner_id);
 
 create table ff5_factors_daily (
-  trade_date  date primary key,
-  mkt_rf      numeric(10,6) not null,
-  smb         numeric(10,6) not null,
-  hml         numeric(10,6) not null,
-  rmw         numeric(10,6) not null,
-  cma         numeric(10,6) not null,
-  rf          numeric(10,6) not null
+  trade_date date primary key,
+  mkt_rf     numeric(10,6) not null,
+  smb        numeric(10,6) not null,
+  hml        numeric(10,6) not null,
+  rmw        numeric(10,6) not null,
+  cma        numeric(10,6) not null,
+  rf         numeric(10,6) not null
 );
-
--- RLS: every user-scoped table has a policy "owner_id = auth.uid()" (or via portfolio_id join)
 ```
+
+**RLS policies**: every user-scoped table requires `owner_id = auth.uid()` (directly or via `portfolio_id` join). Reference data (`tickers`, `prices_daily`, `ff5_factors_daily`, `starter_portfolios`) is readable by any authenticated user. Public backtest sharing uses a separate policy keyed on `share_token`.
+
+**Holdings cache invalidation**: on insert/update/delete to `transactions`, a trigger recomputes the affected `(portfolio_id, ticker)` rows. This keeps reads fast without making transactions the only place truth lives.
 
 ## Pages / screens
 
-| Path | Auth? | Purpose |
-|---|---|---|
-| `/` | public | Landing page. Hero, three-bullet pitch, sample backtest screenshot, "Request an invite" form. |
-| `/login` | public | Email magic link sign-in. |
-| `/redeem` | public | Enter invite code → if valid, redirects to signup. |
-| `/app` | yes | Authenticated home. List of portfolios, "+ New portfolio" CTA. |
-| `/app/portfolio/[id]` | yes | Portfolio detail. Three tabs: **Holdings**, **Strategy**, **Backtest**. |
-| `/app/portfolio/[id]/rebalance` | yes | Trade-list view. "If you do these trades, you'll be at target." |
-| `/app/portfolio/[id]/backtest/[runId]` | yes | Backtest result view: equity curve, metrics table, regime slices, factor exposures. |
-| `/app/settings` | yes | Profile, tier display, danger zone (delete account). |
-| `/admin/invites` | admin only | Mint invite codes (just for you, gated by hardcoded user IDs). |
+| Path | Auth? | Phase | Purpose |
+|---|---|---|---|
+| `/` | public | both | Landing page. Phase 1: minimal "private beta" copy. Phase 2: hero + sample backtest + invite-code CTA. |
+| `/login` | public | both | Email magic link. |
+| `/redeem` | public | Phase 2 | Enter invite code. |
+| `/b/[token]` | public | both | Public shareable backtest view (read-only). |
+| `/app` | yes | both | Portfolio list + "+ New from template" CTA. |
+| `/app/new` | yes | both | Starter portfolio library (clone from canonical) + "Build from scratch". |
+| `/app/portfolio/[id]` | yes | both | Portfolio detail. Tabs: **Overview**, **Holdings**, **Transactions**, **Strategy**, **Backtest**. |
+| `/app/portfolio/[id]/rebalance` | yes | both | Trade-list view + "Mark as executed" → creates transactions. |
+| `/app/portfolio/[id]/backtest/[runId]` | yes | both | Backtest result: equity curve, metrics, regime slices, factor exposures, "share publicly" toggle. |
+| `/app/performance` | yes | both | Cross-portfolio TWR chart since first transaction, vs benchmark. |
+| `/app/settings` | yes | both | Profile, tier display, danger zone. |
+| `/admin/invites` | admin only | Phase 2 | Mint invite codes. |
 
 ## Backtest engine spec
 
-**Input** (snapshot in `backtests.config`):
-```json
-{
-  "tickers": ["VTI","VXUS","BND"],
-  "weights": {"VTI":0.50,"VXUS":0.30,"BND":0.20},
-  "start_date": "2010-01-01",
-  "end_date": "2024-12-31",
-  "initial_capital": 10000,
-  "contributions": {"amount": 500, "frequency": "monthly"},
-  "rebalance": {"type":"threshold","drift_pct":5.0},
-  "benchmark": "SPY"
-}
-```
+(See "Backtest engine spec" section from previous spec version — unchanged.)
 
-**Output** (in `backtests.result`):
-```json
-{
-  "equity_curve": [{"date":"...","portfolio":12345.67,"benchmark":11890.20}, ...],
-  "metrics": {
-    "cagr": 0.087, "vol": 0.142, "sharpe": 0.51, "sortino": 0.78,
-    "max_drawdown": -0.231, "max_drawdown_date": "2020-03-23",
-    "total_return": 1.34, "final_value": 23400.00, "total_contributions": 13000.00
-  },
-  "rolling": {"sharpe_1y": [...], "drawdown": [...]},
-  "regimes": {
-    "gfc_2008":    {"return": -0.21, "max_dd": -0.34, "vol": 0.32},
-    "covid_2020":  {"return": 0.18, "max_dd": -0.19, "vol": 0.41},
-    "inflation_2022": {"return": -0.08, "max_dd": -0.18, "vol": 0.22}
-  },
-  "factors": {
-    "alpha": 0.012, "alpha_t": 1.87,
-    "mkt_rf": {"beta": 0.84, "t": 12.3},
-    "smb":    {"beta": 0.05, "t": 0.6},
-    "hml":    {"beta": 0.21, "t": 2.4},
-    "rmw":    {"beta": -0.03, "t": -0.3},
-    "cma":    {"beta": 0.11, "t": 1.1},
-    "r_squared": 0.91
-  }
-}
-```
+**Key addition**: backtest result includes a `share_token` field. Setting it via the UI generates an unguessable URL (`/b/<token>`) that exposes a read-only view of the result. No user data is exposed — just the strategy config and metrics.
 
-**Rebalance algorithm** (within backtest loop):
-- **Threshold trigger**: on each market day, compute current weights; if any `|current_weight - target_weight| > drift_pct/100`, rebalance.
-- **Calendar trigger**: on first market day of period (M/Q/SA/A), rebalance.
-- **Both**: rebalance if either condition fires.
-- **Cash-flow rebalance** (when `use_cash_flow=true`): on contribution days, allocate new cash to underweight positions first.
-- **Execution model**: trades execute at next day's close, no slippage modeling in v1, no transaction costs in v1 (call this out in the UI).
+## Sprint breakdown
 
-## Sprint breakdown (8-12 weeks, evenings/weekends)
+### Phase 1 — Internal alpha (10-12 weeks)
 
-**Sprint 0 (now): scaffold + spec**
-- Repo scaffold (Next.js + Python worker + shared types)
-- This spec doc
-- Sign up for: Supabase, Vercel, Fly.io, Tiingo, GitHub OAuth, domain registrar (later)
+**Sprint 0 — Scaffold + spec ✅ (done)**
+- Repo scaffold (Next.js + Python worker + supabase migrations)
+- Initial schema (will be replaced by transactions-first schema in Sprint 1)
+- This spec
 
-**Sprint 1 (week 1-2): auth + portfolio CRUD**
-- Supabase project + schema migration
-- Email magic link auth
-- Invite code flow
-- "/app" home, portfolio create/list/edit/delete
-- Holdings table editor (no CSV yet)
+**Sprint 1 — Auth + foundational schema + portfolio CRUD (2 weeks)**
+- Refactor migration to transactions-first schema
+- Supabase project setup + email allowlist auth
+- shadcn/ui setup, layout shell, navigation
+- Portfolio create/list/edit/delete (no holdings yet)
+- `holdings_cache` recompute trigger + cash balance trigger
 
-**Sprint 2 (week 3-4): allocation + current state view**
-- Target allocation editor (weights must sum to 100%)
-- Ticker autocomplete (seed `tickers` table from a CSV of US ETFs+stocks)
-- "Current vs target" view with drift bars
-- Daily price refresh (Supabase cron → Tiingo)
-- Generic CSV import for holdings
+**Sprint 2 — Holdings + transactions + price refresh (2 weeks)**
+- Manual transaction entry form ("opening balance" + "buy" + "sell" + "deposit" + "dividend")
+- Transactions tab on portfolio detail
+- Holdings tab (reads from `holdings_cache`)
+- Ticker seed table + autocomplete (US ETFs + stocks from CSV)
+- Daily price refresh (Supabase cron → Tiingo) for held tickers only
+- Generic CSV import for transactions
 
-**Sprint 3 (week 5-6): rebalance trade list**
-- Python worker scaffolded on Fly.io
-- `/rebalance` endpoint: takes current holdings + target + cash, returns trade list
-- Both threshold and calendar trigger UI (just sets the rule on the portfolio for now)
-- Trade list view: "Buy 12 VTI, sell 4 BND" with $ amounts
+**Sprint 3 — Starter portfolio library + allocations (2 weeks)**
+- Seed `starter_portfolios` with 10-15 canonical strategies
+- `/app/new` library UI with descriptions + sample allocation charts
+- Clone-to-create flow (creates portfolio + initial target allocation + default rebalance rule)
+- Versioned target allocation editor
+- Current-vs-target drift visualization (bars + table)
 
-**Sprint 4 (week 7-8): backtest engine — basic tier**
-- `/backtest` endpoint
-- Equity curve, CAGR, vol, Sharpe, Sortino, max DD, vs benchmark
-- Recurring contributions
-- Backtest detail page with chart + metrics table
+**Sprint 4 — Rebalance trade list (1.5 weeks)**
+- Python worker `/rebalance` endpoint
+- Threshold and calendar trigger UI
+- Cash-flow-first algorithm
+- "Mark as executed" → creates buy/sell transactions in batch
+- Persistent rebalance-action audit trail
 
-**Sprint 5 (week 9-10): backtest — regimes + factors**
-- Load FF5 factor data, monthly refresh
-- Factor regression endpoint
-- Named regime slicing (GFC, COVID, 2022, dot-com)
-- UI: regime cards + factor exposure bar chart with t-stat annotations
+**Sprint 5 — Backtest engine: basic tier (2 weeks)**
+- `/backtest` endpoint: equity curve, CAGR, vol, Sharpe, Sortino, max DD, vs benchmark
+- Recurring contributions modeled
+- Saved + named backtests
+- Comparison view (two backtests side-by-side)
+- Backtest detail page
 
-**Sprint 6 (week 11-12): polish + launch prep**
-- Landing page with sample backtest screenshot
-- "Not financial advice" disclaimers (footer, backtest page, trade list page)
-- ToS + Privacy Policy (generator output, lawyer review optional)
-- Error tracking (Sentry free tier)
-- Email deliverability test (Resend free tier or Supabase default)
-- Invite minting admin page
-- Beta invite first 5 friends, fix bugs, then post to r/Bogleheads
+**Sprint 6 — Backtest: regimes + factors (1.5 weeks)**
+- FF5 factor data loader + monthly cron refresh
+- `/factors` endpoint (regression)
+- Named regime slicing (Dot-com, GFC, COVID, 2022 inflation)
+- Regime cards + factor exposure bar chart UI with t-stat annotations
+- Public shareable backtest URLs (share_token + `/b/<token>` view)
 
-**Deferred to v1.5+**: billing (Stripe), broker API (SnapTrade), tax-aware rebalancing, account hierarchy, custom benchmarks, mobile-optimized layouts.
+**Sprint 7 — Portfolio performance (TWR) tracking (1.5 weeks)**
+- Python worker `/twr` endpoint (modified Dietz or daily-valuation TWR)
+- `/app/performance` page: cross-portfolio TWR chart vs benchmark
+- Per-holding unrealized P&L on Holdings tab
+
+**End of Phase 1: hit the quality bar. Start using it for real.**
+
+### Phase 2 — Public beta prep (4-6 weeks)
+
+**Sprint 8 — Freemium gates + invite flow (1.5 weeks)**
+- Tier enforcement at the data + UI layer (free = 1 portfolio, basic backtest only)
+- Invite-code minting (admin page) + redemption flow
+- Stripe integration for paid tier (free first, paid optional)
+
+**Sprint 9 — Marketing site + legal (1.5 weeks)**
+- Landing page rebuild: hero, three-bullet pitch, sample backtest screenshots, FAQ
+- ToS + Privacy Policy (generated, light review)
+- Custom domain
+- "Not financial advice" disclaimers throughout
+
+**Sprint 10 — Production hardening (1 week)**
+- Sentry error tracking
+- Resend for transactional email
+- Analytics (PostHog free tier)
+- Rate limiting on backtest endpoint
+- Cold-start mitigation for Fly.io worker
+
+**Sprint 11 — Launch (1-2 weeks)**
+- Beta invite first 5 friends
+- Bug fixes
+- Post to r/Bogleheads with invite codes
+- Monitor + iterate
 
 ## Third-party services + costs
 
-| Service | Purpose | Cost v1 |
-|---|---|---|
-| Vercel Hobby | Next.js hosting, edge CDN | $0 |
-| Supabase Free | Postgres, Auth, Storage, Cron | $0 (500MB DB, 50k MAU) |
-| Fly.io | Python backtest worker (scale-to-zero) | ~$0-3/mo |
-| Tiingo Free | EOD market data | $0 (500 req/hr) |
-| Kenneth French Data | FF5 factor returns | $0 |
-| Sentry Developer | Error tracking | $0 (5k events/mo) |
-| Resend (or Supabase email) | Transactional email | $0 (3k emails/mo) |
-| Domain | Friendly URL | $12/yr (later) |
-| **Total (v1)** | | **$0-3/mo** |
+| Service | Purpose | Phase 1 | Phase 2 |
+|---|---|---|---|
+| Vercel Hobby | Next.js hosting | $0 | $0 |
+| Supabase Free | Postgres, Auth, Storage, Cron | $0 | $0 |
+| Fly.io | Python worker (scale-to-zero) | ~$0-3/mo | ~$0-5/mo |
+| Tiingo Free | EOD market data | $0 | $0 |
+| Kenneth French | FF5 factor returns | $0 | $0 |
+| Sentry Dev | Error tracking | — | $0 |
+| Resend | Transactional email | — | $0 |
+| PostHog | Analytics | — | $0 |
+| Domain | Friendly URL | — | $12/yr |
+| Stripe | Billing | — | 2.9% + 30¢ per txn |
+| **Total** | | **$0-3/mo** | **$0-5/mo + tiny domain** |
 
-Headroom: $17/mo unused. Goes to Polygon ($29) only if Tiingo rate limits become painful; goes to Supabase Pro ($25) only if free tier DB fills.
+## Open questions (not blocking Sprint 1)
 
-## Risks + mitigations
-
-| Risk | Mitigation |
-|---|---|
-| Tiingo rate limits choke price refresh as users grow | Cache aggressively; refresh once/day per ticker; upgrade to Polygon if needed |
-| Free tier DB fills (`prices_daily` grows fast) | Only store prices for tickers actually held; prune unused tickers nightly |
-| User uploads junk CSV, breaks parser | Strict schema validation, show preview before commit |
-| "Not financial advice" still attracts a lawyer letter | Disclaimers, no "buy"/"sell" copy outside trade list (use "suggested trades"), ToS prohibits redistribution |
-| Factor regression overfits / misleads | Show R², t-stats, sample size; warn when n < 60 months |
-| Fly.io machine cold-start makes backtests feel slow | First backtest queued, show progress UI; subsequent ones fast |
-| You burn out at sprint 4 | Sprints 1-3 alone are a usable product. Ship if needed and skip 5. |
-
-## Open questions
-
-These are NOT blockers for sprint 0 but need answers before the relevant sprint:
-
-1. **What does the freemium split look like?** (Sprint 6) — e.g., free = 1 portfolio + basic backtest; paid = unlimited + factors + CSV + regimes.
-2. **Mobile**: responsive web is the default. Confirm we're not building a native app.
-3. **Account deletion**: GDPR-correct delete (full data wipe) vs soft delete?
-4. **Backtest result retention**: keep forever? prune after 30 days? cost vs convenience.
-5. **Currency**: USD-only in v1 (since US-only assets). Confirm.
-6. **Time-zone for "today"**: market close = US/Eastern. UI shows local time.
-7. **Email provider**: Supabase default email is fine for v1 invite-only. Switch to Resend before public launch (better deliverability).
-8. **Analytics**: PostHog free tier or Vercel Analytics? Adds 1-2 days of instrumentation.
+1. Currency: USD-only in v1. **Confirmed.**
+2. Mobile: responsive web only, no native. **Default unless objected.**
+3. Account deletion semantics (hard vs soft delete). — Phase 2 concern.
+4. Backtest result retention (keep forever? prune after 90 days for free tier?). — Phase 2 concern.
+5. Drift visualization style (bar chart vs pie vs table). — Sprint 3 design call.
+6. Educational content / tooltips for Sharpe, alpha, betas. — Sprint 5-6 polish.
+7. Default backtest config (start date, capital, contributions) on first run. — Sprint 5.
+8. Whole-shares vs fractional in trade list output. — Sprint 4.
+9. Multi-portfolio rebalance (treat all your portfolios as one) — v2.
 
 ## What we explicitly punted
 
-- Broker API integration (SnapTrade) — Sprint v1.5
-- Stripe billing — Sprint v1.5 (schema is ready via `profiles.tier`)
-- Tax-lot tracking, wash-sale logic — v2
+- Broker API integration (SnapTrade/Plaid) — v1.5+
+- Tax-aware rebalancing (account hierarchy, STCG avoidance, wash-sale) — v2
 - Rules-based trading signals — v2
-- DCA-only "projection calculator" — v2 (subsumed by backtest with contributions)
 - Multi-account hierarchy (Roth/Taxable/401k modeling) — v2
-- International equities, crypto, options — v2+
+- International equities, crypto, options, mutual funds — v2+
 - Native mobile apps — never (responsive web is the contract)
 - Real-money execution — never (we're not a broker-dealer)
+- Intraday data / real-time prices — v2+ (EOD only for v1)
