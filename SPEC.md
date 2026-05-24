@@ -35,14 +35,21 @@ Positioning: Boglehead-friendly. Passive/allocation-first. Not a day-trading too
 | Audience | Public signup eventually (Phase 2), invite-only |
 | Asset universe | US-listed ETFs + US individual stocks |
 | Strategy primary | Portfolio allocation + rebalancing |
-| Holdings input | Manual entry (treated as opening-balance transactions) + generic CSV import |
-| Data model | Transactions ledger is source of truth; holdings computed from it |
+| Holdings input | Manual entry (treated as opening-balance transactions) + generic CSV with smart column-mapping UI |
+| Data model | Transactions ledger is source of truth; `holdings_cache` + `cash_balances` derived via triggers |
+| Strategy versioning | Full target-allocation history preserved; UI shows timeline |
+| Dividend handling | Per-transaction `kind` (`dividend` for cash, `reinvest_dividend` for DRIP) — user picks at entry, no global toggle |
 | Backtest depth | Equity curve, CAGR, max DD, Sharpe, Sortino, rolling metrics, vs benchmark, **named regimes**, **Fama-French 5 factor exposures** |
+| Backtest defaults | 15 years back, $10k initial, $500/month contributions, vs SPY benchmark |
 | Planning feature | Rebalance trade list with both threshold + calendar trigger options |
+| Trade-list precision | Whole shares only (accept small residual drift) |
 | Trade-list execution | "Mark as executed" creates transactions; full ledger from day one |
 | Performance display | Time-weighted return chart since first transaction + per-holding unrealized P&L |
 | Starter content | Library of 10-15 canonical portfolios, clone-to-create |
 | Onboarding | First-run shows the starter library; "Build from scratch" is a secondary option |
+| Drift visualization | Three views with toggle: (a) table with mini-bars, (b) side-by-side donut charts, (c) horizontal drift gauges with threshold band |
+| Educational angle | Hover tooltips on every metric + dedicated `/learn` glossary page |
+| Mobile | Responsive web, optimized for desktop, usable on phone |
 | Pricing | Freemium (free=1 portfolio basic, paid=unlimited + pro features). Schema-ready in Phase 1, **enforced in Phase 2** |
 | Domain | Defer; ship under `*.vercel.app` for Phase 1, custom domain for Phase 2 |
 | Distribution | Phase 1: word of mouth to 2-3 friends. Phase 2: Reddit (r/Bogleheads, r/investing) + friends share invites |
@@ -359,17 +366,18 @@ create table ff5_factors_daily (
 | Stripe | Billing | — | 2.9% + 30¢ per txn |
 | **Total** | | **$0-3/mo** | **$0-5/mo + tiny domain** |
 
-## Open questions (not blocking Sprint 1)
+## Open questions (decide just-in-time during their sprint)
 
 1. Currency: USD-only in v1. **Confirmed.**
-2. Mobile: responsive web only, no native. **Default unless objected.**
-3. Account deletion semantics (hard vs soft delete). — Phase 2 concern.
-4. Backtest result retention (keep forever? prune after 90 days for free tier?). — Phase 2 concern.
-5. Drift visualization style (bar chart vs pie vs table). — Sprint 3 design call.
-6. Educational content / tooltips for Sharpe, alpha, betas. — Sprint 5-6 polish.
-7. Default backtest config (start date, capital, contributions) on first run. — Sprint 5.
-8. Whole-shares vs fractional in trade list output. — Sprint 4.
-9. Multi-portfolio rebalance (treat all your portfolios as one) — v2.
+2. Account deletion semantics (hard vs soft delete). — Phase 2.
+3. Backtest result retention (keep forever? prune after 90d for free?). — Phase 2.
+4. Backtest comparison count (2 side-by-side vs N up to limit). — Sprint 5.
+5. Ticker autocomplete: symbol-only vs symbol+company name. — Sprint 2.
+6. Analytics provider: PostHog vs Vercel Analytics. — Phase 2.
+7. Multi-portfolio rebalance (treat all your portfolios as one). — v2.
+8. Backtest handling when ticker has insufficient history. — Sprint 5.
+9. Empty-state UI for portfolio with no transactions. — Sprint 2.
+10. Hosting region. — Default US-East-1 unless objected.
 
 ## What we explicitly punted
 
